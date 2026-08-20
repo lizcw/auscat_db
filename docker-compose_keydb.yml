@@ -1,0 +1,121 @@
+services:
+  keydb:
+    image: auscat/key_db_schema:latest
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      # Used by the init script
+      POSTGRES_RW_USER: ${POSTGRES_RW_USER}
+      POSTGRES_RW_PASSWORD_FILE: /run/secrets/postgres_rw_password
+    secrets:
+      - postgres_password
+      - key_admin_password
+      - etl_user_password
+      - postgres_rw_password
+    command:
+      - postgres
+        - -c
+        - config_file=/etc/postgresql/pgaudit.conf
+    expose:
+      - 5432
+    volumes:
+      - keydb_data:/var/lib/postgresql/data
+      - postgres_logs:/var/log/postgresql
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+      - ./postgres/config/pgaudit.conf:/etc/postgresql/pgaudit.conf:ro
+    networks:
+      - backend
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_ADMIN_USER} -d ${POSTGRES_DB}"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: auscat/key_db_pgadmin4:latest
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: auscat-liverpool@gmail.com
+      PGADMIN_DEFAULT_PASSWORD_FILE: /run/secrets/key_pgadmin_ui_password
+    secrets:
+      - key_pgadmin_ui_password
+      - key_pgadmin_pgpass
+    volumes:
+      - pgadmin_data2:/var/lib/pgadmin
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+    ports:
+      - "5055:80"
+    depends_on:
+      keydb:
+        condition: service_healthy
+    networks:
+      - backend
+
+  ctp_customized:
+    image: auscat/customized_ctp:1.0.0
+    restart: unless-stopped
+    depends_on:
+      keydb:
+        condition: service_healthy
+    ports:
+      - 9090:9090
+      - 8104:8104
+    environment:
+      ORTHANC_HOSTNAME: 10.33.76.155
+      ORTHANC_PORT: 4242
+    command: bash -c "python3 get_docker_secret.py & java -Xmx2g -Xms256m -jar libraries/CTP.jar"
+
+    volumes:
+      - ctp-logs:/logs
+      - ctp-customized:/ctp_temp
+    secrets:
+      - keydb_user
+      - key_admin_password
+      - ctp_admin_pass
+      - key_admin_username
+    networks:
+      - backend
+
+secrets:
+  postgres_password:
+    external: true
+  key_admin_password:
+    external: true
+  etl_user_password:
+    external: true
+  postgres_rw_password:
+    file: ./secrets/postgres_rw_password.txt
+
+  key_pgadmin_ui_password:
+    external: true
+  key_pgadmin_pgpass:
+    external: true
+  keydb_user:
+    external: true
+  ctp_admin_pass:
+    external: true
+  key_admin_username:
+    external: true
+
+volumes:
+  keydb_data:
+    labels:
+      - "keep=true"
+  pgadmin_data2:
+    labels:
+      - "keep=true"
+  ctp-logs:
+  ctp-customized:
+  postgres_logs:
+    labels:
+      - "keep=true"
+
+networks:
+  backend:
+    driver: overlay

@@ -1,0 +1,71 @@
+services:
+  postgres:
+    build:
+      context: ./postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_admin_password
+      # Used by the init script
+      POSTGRES_RW_USER: ${POSTGRES_RW_USER}
+      POSTGRES_RW_PASSWORD_FILE: /run/secrets/postgres_rw_password
+    secrets:
+      - postgres_admin_password
+      - postgres_rw_password
+    command:
+      - postgres
+        - -c
+        - config_file=/etc/postgresql/pgaudit.conf
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - postgres_logs:/var/log/postgresql
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+      - ./postgres/config/pgaudit.conf:/etc/postgresql/pgaudit.conf:ro
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_ADMIN_USER} -d ${POSTGRES_DB}"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD_FILE: /run/secrets/pgadmin_password
+    secrets:
+      - pgadmin_password
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+    ports:
+      - "5055:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+secrets:
+  postgres_admin_password:
+    file: ./secrets/postgres_admin_password.txt
+  postgres_rw_password:
+    file: ./secrets/postgres_rw_password.txt
+  pgadmin_password:
+    file: ./secrets/pgadmin_password.txt
+
+volumes:
+  postgres_data:
+    labels:
+      - "keep=true"
+  postgres_logs:
+    labels:
+      - "keep=true"
+  pgadmin_data:
+    labels:
+      - "keep=true"
