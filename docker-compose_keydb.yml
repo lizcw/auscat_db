@@ -41,7 +41,7 @@ services:
     image: auscat/key_db_pgadmin4:latest
     restart: unless-stopped
     environment:
-      PGADMIN_DEFAULT_EMAIL: auscat-liverpool@gmail.com
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
       PGADMIN_DEFAULT_PASSWORD_FILE: /run/secrets/key_pgadmin_ui_password
     secrets:
       - key_pgadmin_ui_password
